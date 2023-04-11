@@ -78,15 +78,14 @@ func main() {
 		panic(err)
 	}
 	// Server
-	server()
+	Server()
 
 }
 
-func server() {
-	go func() {
-		http.HandleFunc("/cotacao", handler)
-		http.ListenAndServe(":8080", nil)
-	}()
+func Server() {
+	fmt.Println("Run Server at port 8080")
+	http.HandleFunc("/cotacao", handler)
+	http.ListenAndServe(":8080", nil)
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
@@ -94,30 +93,32 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(os.Stdout, "processing request\n")
 	defer log.Println("[Server] End Request")
 
-	ctx, cancel := context.WithTimeout(ctx, time.Millisecond*200)
-	defer cancel()
-
 	exchange, err := client(ctx)
 	if err != nil {
-		cancel()
+		fmt.Println("[Server] connection error ", err.Error())
+		failRequest(w)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	jsonResp, err := json.Marshal(exchange)
 	if err != nil {
-		log.Fatalf("Error happened in JSON marshal. Err: %s", err)
+		log.Fatalf("[Server] Error happened in JSON marshal. Err: %s", err)
+		failRequest(w)
 	}
+	// fmt.Println(string(jsonResp))
+	err = insertExchange(ctx, exchange)
+	if err != nil {
+		log.Fatalf("[Server] Error to insert data. Err: %s", err)
+		failRequest(w)
+	}
+
 	w.Write(jsonResp)
 
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
-		defer cancel()
-		err = insertExchange(ctx, exchange)
-		if err != nil {
-			cancel()
-		}
-	}()
-
 	return
+}
+
+func failRequest(w http.ResponseWriter) {
+	w.WriteHeader(http.StatusInternalServerError)
+	w.Write([]byte("500 - Something bad happened!"))
 }
 
 func RemoveDB() {
@@ -144,43 +145,52 @@ func OpenDB() error {
 		return err
 	}
 	DB = db
-	defer db.Close()
+
 	createTable(db)
 	return nil
 }
 
-func createTable(db *sql.DB) {
-	createExchangeTableSQL := `CREATE TABLE exchange (
-		"id" integer NOT NULL PRIMARY KEY AUTOINCREMENT,
-		"hash" TEXT,
-		"code" TEXT,
-		"codein" TEXT,
-		"name" TEXT,
-		"bid" TEXT,
-		"timestamp" TEXT,
-		"createdate" TEXT,
-	  );` // SQL Statement for Create Table
-
-	log.Println("Create exchange table...")
-	statement, err := db.Prepare(createExchangeTableSQL) // Prepare SQL Statement
+func createTable(db *sql.DB) error {
+	DB := db
+	log.Println("[SQL] Creating exchange table...")
+	statement, err := DB.Prepare(`CREATE TABLE exchange (
+		id integer PRIMARY KEY,
+		hash text,
+		code text,
+		codein text,
+		name text,
+		bid text NOT NULL,
+		timestamp text,
+		create_date text
+	);`) // Prepare SQL Statement
 	if err != nil {
 		log.Fatal(err.Error())
+		return err
 	}
 	statement.Exec() // Execute SQL Statements
-	log.Println("exchange table created")
-	DB = db
+	log.Println("[SQL] exchange table created")
+
+	return nil
 }
 
 func insertExchange(ctx context.Context, ex *Exchange) error {
-	stmt, err := DB.PrepareContext(ctx, "insert into exchange(hash, code, codein, name, bid, timestamp, createdate) values(?, ?, ?, ?, ?, ?, ?)")
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	log.Println("[SQL] statement: insert")
+	stmt, err := DB.PrepareContext(ctx, "insert into exchange(hash, code, codein, name, bid, timestamp, create_date) values(?, ?, ?, ?, ?, ?, ?)")
 	if err != nil {
+		log.Fatalf("[SQL] Error to statement insert. Err: %s", err)
+		return err
+	}
+	log.Println("[SQL] exec query: insert")
+	_, err = stmt.Exec(ex.ID, ex.Code, ex.Codein, ex.Name, ex.Bid, ex.Timestamp, ex.CreateDate)
+	if err != nil {
+		log.Fatalf("[SQL] Error to exec insert. Err: %s", err)
 		return err
 	}
 	defer stmt.Close()
-	_, err = stmt.Exec(ex.ID, ex.Code, ex.Codein, ex.Name, ex.Bid, ex.Timestamp, ex.CreateDate)
-	if err != nil {
-		panic(err)
-	}
+	defer DB.Close()
 	return nil
 }
 
@@ -189,26 +199,33 @@ func client(ctx context.Context) (*Exchange, error) {
 	// var exRate ExchangeRate
 	err := PerformGET(ctx, &last)
 	if err != nil {
-		log.Fatal("[Server] error getting exchange - %s \n", err.Error())
+		log.Fatal("[Server] error getting exchange: ", err.Error())
 		return nil, err
 	}
 
 	exchange := NewExchange(last.ExchangeRate)
-
+	fmt.Println("[Server] Rx Hash: ", exchange.ID)
 	return exchange, nil
 }
 
 func PerformGET(ctx context.Context, target interface{}) error {
+	start := time.Now()
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		log.Fatal("[Server] %s \n", err.Error())
+		log.Fatal("[Server] #1 ", err.Error())
 		return err
 	}
+
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		log.Fatal("[Server] %s \n", err.Error())
+		fmt.Println("[Server] time expanse ", start)
+		log.Fatal("[Server] #2 ", err.Error())
 		return err
 	}
 	defer res.Body.Close()
+	fmt.Println("[Server] time expanse ", start)
 	return json.NewDecoder(res.Body).Decode(target)
 }
