@@ -31,15 +31,19 @@ type Exchange struct {
 	CreateDate string `json:"create_date"`
 }
 
+func init() {
+	os.Remove(filename)
+}
+
 func main() {
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*300)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*3000)
 	defer cancel()
 
 	var exchange Exchange
 	err := PerformGET(ctx, &exchange)
 	if err != nil {
-		log.Fatal("[Client] error getting exchange by Server - %s \n", err.Error())
+		log.Fatal("[Client] error getting exchange by Server \n", err.Error())
 		panic(err)
 	}
 	RecordOnFile(&exchange)
@@ -48,14 +52,15 @@ func main() {
 func PerformGET(ctx context.Context, target interface{}) error {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		log.Fatal("[Client] %s \n", err.Error())
+		log.Fatal("[Client] ", err.Error())
 		return err
 	}
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		log.Fatal("[Client] %s \n", err.Error())
+		log.Fatal("[Client] ", err.Error())
 		return err
 	}
+	fmt.Println("[Client] StatusCode: ", res.StatusCode)
 	defer res.Body.Close()
 	return json.NewDecoder(res.Body).Decode(target)
 }
