@@ -1,0 +1,47 @@
+# Test
+
+## Commands
+
+### General
+
+Simple Test inside a package
+> go test .
+
+Simple Test inside a package using verbose
+> go test . -v
+
+### Coverage
+
+Getting the coverage from a Test
+> go test . -coverprofile=coverage.out
+
+Getting the output coverage from a Test into HTML file
+> go tool cover -html=coverage.out
+
+### Benchmark
+
+Running the test with Benchmark
+> go test -bench=.
+
+Running only the test Benchmark with regex as option
+> go test -bench=. -run=^#
+
+Running 10 times the test Benchmark
+> go test -bench=. -run=^# -count=10
+
+Running 10 times the test Benchmark each 3s to execute
+> go test -bench=. -run=^# -count=10 -benchtime=3s
+
+### Fuzzing
+
+Simple Test with Fuzz
+> go test -fuzz=.
+
+Test with Fuzz usign regex as option
+> go test -fuzz=. -run=^#
+
+Re-Run the Fuzz test
+> go test -run=FuzzCalculateTax\4d4c33006214b915110241d82613ac21ba3d719556e2275ce4d83392829ff744
+
+Running the Fuzz test with 5s duration
+> go test -fuzz=. -fuzztime=5s -run=^#
